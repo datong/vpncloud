@@ -1,0 +1,69 @@
+name: VC-CI
+
+on:
+  push:
+    branches: 
+      - master
+  # schedule:
+  #   - cron: 0 20 * * *
+  # release:
+  #   types: [published]
+env:
+  SSH_ACTIONS: false
+
+jobs:
+
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@master
+        with:
+          ref: master
+          fetch-depth: 1000000
+
+      - name: Compile
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          #docker rmi `docker images -q`
+          #sudo rm -rf /usr/share/dotnet /etc/mysql /etc/php /etc/apt/sources.list.d
+          #sudo -E apt-get -y purge azure-cli ghc* zulu* hhvm llvm* firefox google* dotnet* powershell openjdk* mysql* php*
+          sudo -E apt-get update
+          sudo -E apt-get -y install build-essential asciidoc binutils bzip2 gawk gettext git libncurses5-dev libz-dev patch python3 unzip zlib1g-dev lib32gcc1 libc6-dev-i386 subversion flex uglifyjs gcc-multilib g++-multilib p7zip p7zip-full msmtp libssl-dev texinfo libglib2.0-dev xmlto qemu-utils upx libelf-dev autoconf automake libtool autopoint device-tree-compiler
+          #sudo -E apt-get -y autoremove --purge
+          #sudo -E apt-get clean
+          wget https://downloads.openwrt.org/releases/19.07.0-rc2/targets/armvirt/64/openwrt-sdk-19.07.0-rc2-armvirt-64_gcc-7.5.0_musl.Linux-x86_64.tar.xz
+          tar xvf openwrt-sdk-19.07.0-rc2-armvirt-64_gcc-7.5.0_musl.Linux-x86_64.tar.xz
+          vcdir=$(pwd)
+          PATH=$PATH:$vcdir/openwrt-sdk-19.07.0-rc2-armvirt-64_gcc-7.5.0_musl.Linux-x86_64/staging_dir/toolchain-aarch64_generic_gcc-7.5.0_musl/bin/
+          export PATH
+          ln -sf $vcdir/openwrt-sdk-19.07.0-rc2-armvirt-64_gcc-7.5.0_musl.Linux-x86_64/staging_dir/toolchain-aarch64_generic_gcc-7.5.0_musl/bin/aarch64-openwrt-linux-gcc $vcdir/openwrt-sdk-19.07.0-rc2-armvirt-64_gcc-7.5.0_musl.Linux-x86_64/staging_dir/toolchain-aarch64_generic_gcc-7.5.0_musl/bin/aarch64-linux-musl-gcc
+          cat >> .cargo/config <<EOF
+          
+          [target.aarch64-unknown-linux-musl]
+          linker = "aarch64-openwrt-linux-musl-gcc"
+          objcopy = { path = "aarch64-openwrt-linux-musl-objcopy" }
+          strip = { path = "aarch64-openwrt-linux-musl-strip" }
+          rustflags = [ "-C", "target-feature=+crt-static", "-C", "link-arg=-lgcc" ]
+          
+          EOF
+          
+          cat .cargo/config
+          RUST=1.40.0
+          curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain ${RUST}
+          rustup target add aarch64-unknown-linux-musl
+          cargo build --release --target aarch64-unknown-linux-musl
+          #cargo build --release 
+         
+      - name: SSH connection to Actions
+        uses: P3TERX/debugger-action@master
+        if: env.SSH_ACTIONS == 'true'
+        
+      - name: Upload artifact
+        uses: actions/upload-artifact@master
+        with:
+          name: Vpncloud_openwrt
+          path: ./target/
